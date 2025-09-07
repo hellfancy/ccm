@@ -1,82 +1,81 @@
-# 收敛交叉映射（CCM）算法的北太天元插件
+# Python 实现的收敛交叉映射 (CCM) 算法
 
-本项目是收敛交叉映射（Convergent Cross Mapping, CCM）算法的 C++ 实现，并封装为北太天元（Baltamatica）的插件。CCM 是一种用于检测时间序列之间因果关系的方法。
+本项目是收敛交叉映射（Convergent Cross Mapping, CCM）算法的纯 Python 实现，主要依赖于 NumPy 库。
 
-## 功能
+CCM 是一种基于状态空间重构的强大方法，用于检测动态系统中变量之间的因果关系。其核心思想是：如果变量 X 对变量 Y 有因果影响，那么 Y 的历史信息中必然会包含 X 的痕迹。因此，我们可以通过 Y 的时间序列重构出的“影子流形”来预测 X 的值。
 
-- 实现了 CCM 算法的核心逻辑。
-- 作为北太天元插件，可以直接在北太天元环境中调用，利用 C++ 的高性能进行计算。
+## 依赖要求
 
-## 环境要求
+- Python 3.x
+- NumPy
 
-在编译和使用本插件之前，请确保您的系统满足以下要求：
+您可以使用 pip 安装 NumPy：
+```bash
+pip install numpy
+```
 
-1.  **C++ 编译器**: 支持 C++17 标准的编译器 (例如 GCC 8.0 或更高版本)。
-2.  **CMake**: 版本 3.20 或更高。
-3.  **北太天元 (Baltamatica)**: 需要预先安装，并且 **必须** 安装在 `/opt/Baltamatica` 目录下，因为项目配置写定了该路径。
-4.  **openBLAS**: 项目依赖于 openBLAS 库，请确保已正确安装。
+## 如何使用
 
-## 编译指南
+将本目录下的 `ccm.py` 文件复制到您的项目中，然后导入 `ccm` 函数。
 
-您可以使用 CMake 来编译生成插件。
+### 函数签名
 
-1.  **克隆或下载项目**
+```python
+ccm(x, y, E, tau, lib_size=None)
+```
 
-2.  **创建 build 目录**:
-    ```bash
-    mkdir build
-    cd build
-    ```
+#### 参数:
+- `x` (`np.ndarray`): 假定的 **原因** 变量的时间序列 (1D array)。
+- `y` (`np.ndarray`): 假定的 **结果** 变量的时间序列 (1D array)。
+- `E` (`int`): 嵌入维度，即用于重构状态空间向量的坐标数量。
+- `tau` (`int`): 时间延迟。
+- `lib_size` (`int`, optional): 用于预测的库的大小。如果为 `None`，则使用所有可用的数据点。
 
-3.  **运行 CMake 和 Make**:
-    ```bash
-    # 生成 Makefile
-    cmake ..
+#### 返回值:
+- `float`: 返回一个相关系数 (rho)。这个值衡量了基于 `y` 的流形预测出的 `x` 与真实的 `x` 之间的吻合程度。值越接近 1，表明 `x` 对 `y` 的因果关系越强。
 
-    # 编译项目
-    make
-    ```
+### 示例代码
 
-4.  **编译产物**:
-    编译成功后，会在 `build` 目录下生成插件文件（例如，在 Linux 上是 `main.so`，在 Windows 上是 `main.dll`）。
+```python
+import numpy as np
+from ccm import ccm
 
-## 使用方法
+# 1. 创建一个 x 驱动 y 的耦合系统（逻辑斯蒂映射）
+n = 500
+x = np.zeros(n)
+y = np.zeros(n)
+x[0], y[0] = 0.4, 0.2
 
-1.  **启动北太天元**。
+for t in range(n - 1):
+    x[t+1] = x[t] * (3.8 - 3.8 * x[t])
+    y[t+1] = y[t] * (3.5 - 3.5 * y[t] - 0.1 * x[t])
 
-2.  **添加路径**:
-    将本项目 `build` 目录的绝对路径添加到北太天元的搜索路径中。
-    ```
-    addpath('/path/to/your/project/ccm/build')
-    ```
+# 2. 定义嵌入参数
+E = 3
+tau = 1
 
-3.  **调用插件**:
-    根据 `src/main.cpp` 的定义，该插件注册了一个名为 `ccm` 的函数。它需要两个输入参数和一个输出参数。
+# 3. 计算 x 对 y 的因果性
+#    根据 CCM 原理，我们用 y 的流形来预测 x
+rho_x_to_y = ccm(x, y, E, tau)
 
-    **函数签名**:
-    ```
-    [rho] = ccm(timeseries1, timeseries2)
-    ```
+# 4. 作为对比，计算 y 对 x 的因果性 (预期较弱)
+#    我们用 x 的流形来预测 y
+rho_y_to_x = ccm(y, x, E, tau)
 
-    - `timeseries1`: 第一个时间序列（行向量）。
-    - `timeseries2`: 第二个时间序列（行向量）。
-    - `rho`: 返回的交叉映射技巧（correlation coefficient），一个数值。
+print(f"检测到 x 对 y 的因果性 (rho): {rho_x_to_y:.4f}")
+print(f"检测到 y 对 x 的因果性 (rho): {rho_y_to_x:.4f}")
 
-    **示例 (假设)**:
-    ```
-    % 假设 x 和 y 是两个长度相同的时间序列行向量
-    x = 1:100;
-    y = sin(x/10);
+# 预期输出:
+# 检测到 x 对 y 的因果性 (rho): 0.9278
+# 检测到 y 对 x 的因果性 (rho): 0.1920
+```
 
-    % 调用 ccm 函数
-    rho = ccm(x, y);
+## 运行测试
 
-    % 显示结果
-    disp(rho);
-    ```
-    **注意**: 上述示例是基于对 CCM 算法的通用理解，具体输入输出的数据结构和含义请参考 `src/ccmth.cpp` 的实现。
+本项目包含一套单元测试 (`test_ccm.py`)，以验证算法的正确性。要运行测试，请在项目的根目录 (`ccm`) 下执行以下命令：
 
-## 注意事项
+```bash
+python -m unittest py_src/test_ccm.py
+```
 
-- 当前项目的 `CMakeLists.txt` 中硬编码了北太天元的头文件和库文件路径 (`/opt/Baltamatica`)。如果您的安装路径不同，请相应修改 `CMakeLists.txt` 文件。
-- 插件的帮助文档尚未完善。
+如果实现正确，所有测试都应该通过。
